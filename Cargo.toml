@@ -1,0 +1,17 @@
+[package]
+name = "grove2"
+version = "0.1.0"
+authors = ["Carl Malmz <callem217@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = "0.2.0-alpha.5"
+cpal = "0.10.0"
+hound = "3.4.0"
+failure = "0.1.5"
+audiopus = "0.1.2"
+bytes = "0.4.12"
+crossbeam-utils = "0.6.6"
+anyhow = "1.0.18"
