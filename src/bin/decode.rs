@@ -36,9 +36,12 @@ fn main() -> Result<()> {
         buf = buf.split_at(8).1;
         let count = usize::from_ne_bytes(count_buf);
         let frame = &buf[..count];
+
+        // n in number of samples, need to multiply by channel count to get amount of floats
         let n = decoder.decode_float(Some(frame), &mut output, false).expect("Failed to decode");
         dbg!(n);
         buf = buf.split_at(count).1;
+        // Multipy...
         let data: Vec<u8> = output[..n*2].iter()
             .map(|s| sample_to_bytes(*s))
             .flat_map(ArrayIterator::new)
