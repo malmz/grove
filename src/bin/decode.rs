@@ -9,6 +9,8 @@ use audiopus::{
     Channels,
 };
 use cpal::Sample;
+use array_iterator::ArrayIterator;
+use audiopus::coder::GenericCtl;
 
 fn sample_to_bytes<T: Sample>(val: T) -> [u8; 4] {
     val.to_f32().to_bits().to_ne_bytes()
@@ -27,6 +29,7 @@ fn main() -> Result<()> {
     let mut decoder: Decoder = Decoder::new(SampleRate::Hz48000, Channels::Stereo)?;
 
     while !buf.is_empty() {
+        dbg!(buf.len());
         for (c, b) in count_buf.iter_mut().zip(buf) {
             *c = *b;
         }
@@ -34,9 +37,14 @@ fn main() -> Result<()> {
         let count = usize::from_ne_bytes(count_buf);
         let frame = &buf[..count];
         let n = decoder.decode_float(Some(frame), &mut output, false).expect("Failed to decode");
+        dbg!(n);
         buf = buf.split_at(count).1;
-        let data: Vec<u8> = &output[..n].iter().map(|s| sample_to_bytes(*s)).foldcargo.collect();
+        let data: Vec<u8> = output[..n*2].iter()
+            .map(|s| sample_to_bytes(*s))
+            .flat_map(ArrayIterator::new)
+            .collect();
         out_file.write_all(&data)?;
     }
+    dbg!(decoder.final_range());
     Ok(())
 }

@@ -16,3 +16,4 @@ anyhow = "1.0.25"
 byteorder = "1.3.2"
 crossbeam = { git = "https://github.com/stjepang/crossbeam.git", branch = "spsc" }
 parking_lot = "0.10.0"
+array_iterator = "0.2.4"

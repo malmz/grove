@@ -13,6 +13,8 @@ use std::io::Read;
 use std::io::Write;
 use crossbeam::queue::spsc;
 use crossbeam::queue::{PushError, PopError};
+use std::io::BufWriter;
+use audiopus::coder::GenericCtl;
 
 fn create_host() -> cpal::Host {
     cpal::default_host() 
@@ -130,6 +132,7 @@ fn main() -> Result<()> {
         let encoder = encoder_from_spec(&format);
         let mut temp_buf = [0f32; 2880 * 2];
         let mut out_buf = vec![0u8; 4000];
+        let mut raw_file = BufWriter::new(std::fs::File::create("unencoded.PCM").unwrap());
         let mut file = std::fs::File::create("encoded.opus").unwrap();
         let &(ref lock, ref cvar) = &*can_read;
         let mut n = 0usize;
@@ -142,13 +145,17 @@ fn main() -> Result<()> {
             }
             *read = false;
 
-            if stop2.load(std::sync::atomic::Ordering::Relaxed) { break; }
+            if stop2.load(std::sync::atomic::Ordering::Relaxed) { 
+                dbg!(encoder.final_range());
+                break; 
+            }
 
             for slot in temp_buf.iter_mut().skip(n) {
                 if let Ok(val) = rx.pop() {
                     *slot = val;
+                    raw_file.write_all(&sample_to_bytes(val)[..]).unwrap();
                     n += 1;
-                } else if n >= 120 * 2 {
+                } else if n >= 960 * 2 {
                     break;
                 } else {
                     continue 'outer;
@@ -156,7 +163,7 @@ fn main() -> Result<()> {
             }
             debug_assert!(n & 1 == 0);
             dbg!(n);
-            let frame_size = largest_fram_size(n>>1);
+            let frame_size = dbg!(largest_fram_size(n>>1));
             let frame = &temp_buf[..frame_size*2];
     
             let en = encoder.encode_float(&frame, &mut out_buf).expect("Failed to encode");
