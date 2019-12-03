@@ -4,6 +4,7 @@ use bytes::BufMut;
 use std::sync::{
     Arc,
 };
+use parking_lot::{Mutex, Condvar};
 use anyhow::Result;
 use anyhow::anyhow;
 use cpal::Sample;
@@ -11,6 +12,7 @@ use byteorder::{ByteOrder, NativeEndian};
 use std::io::Read;
 use std::io::Write;
 use crossbeam::queue::spsc;
+use crossbeam::queue::{PushError, PopError};
 
 fn create_host() -> cpal::Host {
     cpal::default_host() 
@@ -71,14 +73,18 @@ fn largest_fram_size(len: usize) -> usize {
 fn main() -> Result<()> {
     let (host, device, format, event_loop, stream_id) = init_cpal()?;
     let event_loop = Arc::new(event_loop);
-    let mut bytes = bytes::BytesMut::with_capacity(1024 * 32);
-    let (tx, rx) = crossbeam_channel::bounded::<bytes::Bytes>(8);
+
+    let (tx, rx) = spsc::new::<f32>(1024);
+    let can_read = Arc::new((Mutex::new(false), Condvar::new()));
+
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let sound_handle = {
         let format = format.clone();
         let stop = stop.clone();
         let event_loop = event_loop.clone();
+        let can_read = can_read.clone();
         std::thread::spawn(move || {
+            let &(ref lock, ref cvar) = &*can_read;
             event_loop.run(move |id, event| {
                 let data = match event {
                     Ok(data) => data,
@@ -88,38 +94,34 @@ fn main() -> Result<()> {
                     }
                 };
                 if stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let mut read = lock.lock();
+                    *read = true;
+                    cvar.notify_one();
                     println!("Stopping");
                     panic!("Akwardly closing cpal thread");
                     //return;
                 }
-                bytes.reserve(1024 * 16);
                 match data {
                     cpal::StreamData::Input { buffer: cpal::UnknownTypeInputBuffer::U16(buffer) } => {
-                        for sample in buffer.iter() {
-                            let sample = sample_to_bytes(*sample);
-                            bytes.put(&sample[..]);
+                        for sample in buffer.iter().map(Sample::to_f32) {
+                            tx.push(sample).ok();
                         }
                     },
                     cpal::StreamData::Input { buffer: cpal::UnknownTypeInputBuffer::I16(buffer) } => {
-                        for sample in buffer.iter() {
-                            let sample = sample_to_bytes(*sample);
-                            bytes.put(&sample[..]);
+                        for sample in buffer.iter().map(Sample::to_f32) {
+                            tx.push(sample).ok();
                         }
                     },
                     cpal::StreamData::Input { buffer: cpal::UnknownTypeInputBuffer::F32(buffer) } => {
                         for sample in buffer.iter() {
-                            let sample = sample_to_bytes(*sample);
-                            bytes.put(&sample[..]);
+                            tx.push(*sample).ok();
                         }
                     },
                     _ => (),
                 }
-                if bytes.len() >= 120 * 4 * format.channels as usize {
-                    let split_len = largest_fram_size(bytes.len() / (4 * format.channels as usize));
-                    let frame = bytes.split_to(split_len * 4 * format.channels as usize);
-                    let frame = frame.freeze();
-                    if let Err(crossbeam_channel::TrySendError::Disconnected(_)) = tx.try_send(frame) { return };
-                }
+                let mut read = lock.lock();
+                *read = true;
+                cvar.notify_one();
             })
         })
     };
@@ -128,33 +130,51 @@ fn main() -> Result<()> {
         let encoder = encoder_from_spec(&format);
         let mut temp_buf = [0f32; 2880 * 2];
         let mut out_buf = vec![0u8; 4000];
-        let mut file = std::fs::File::create("encoded.rawopus").unwrap();
-        for frame in rx {
-            if stop2.load(std::sync::atomic::Ordering::Relaxed) { break; }
-            for (sample, out) in frame.chunks_exact(4).zip(temp_buf.iter_mut()) {
-                let sample: f32 = NativeEndian::read_f32(sample);
-                *out = sample;
+        let mut file = std::fs::File::create("encoded.opus").unwrap();
+        let &(ref lock, ref cvar) = &*can_read;
+        let mut n = 0usize;
+        'outer: loop {
+            
+            // Wait for audio to be avalible
+            let mut read = lock.lock();
+            if !*read {
+                cvar.wait(&mut read);
             }
-            let n = encoder.encode_float(&temp_buf, &mut out_buf).expect("Failed to encode");
-            file.write_all(&n.to_ne_bytes()).unwrap();
-            file.write_all(&out_buf[..n]).unwrap();
-            // println!("{}: {:?}", n, &out_buf[..n]);
+            *read = false;
+
+            if stop2.load(std::sync::atomic::Ordering::Relaxed) { break; }
+
+            for slot in temp_buf.iter_mut().skip(n) {
+                if let Ok(val) = rx.pop() {
+                    *slot = val;
+                    n += 1;
+                } else if n >= 120 * 2 {
+                    break;
+                } else {
+                    continue 'outer;
+                }
+            }
+            debug_assert!(n & 1 == 0);
+            dbg!(n);
+            let frame_size = largest_fram_size(n>>1);
+            let frame = &temp_buf[..frame_size*2];
+    
+            let en = encoder.encode_float(&frame, &mut out_buf).expect("Failed to encode");
+            file.write_all(&en.to_ne_bytes()).unwrap();
+            file.write_all(&out_buf[..en]).unwrap();
+            temp_buf.copy_within(frame_size*2..n, 0);
+            n -= frame_size * 2;
         }
         file.flush().unwrap();
     });
-    loop {
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        if input.contains('q') {
-            println!("Trying to stop");
-            stop.store(true, std::sync::atomic::Ordering::Relaxed);   
-            sound_handle.join().ok();
-            println!("Stopped cpal thread");
-            event_loop.destroy_stream(stream_id);
-            break;
-        }
-    }
-    encoder_handle.join().unwrap();
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    println!("Trying to stop");
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);   
+    sound_handle.join().ok();
+    println!("Stopped cpal thread");
+    event_loop.destroy_stream(stream_id);    
+    encoder_handle.join().expect("Error in encoder thread");
     println!("Clean shutdown");
     Ok(())
 }
