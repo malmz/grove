@@ -7,7 +7,7 @@ use tokio::task;
 
 pub async fn run(mut speaker: Speaker) -> Result<()> {
 
-    let decoder = decoder_from_format(speaker.format())?;
+    let mut decoder = decoder_from_format(speaker.format())?;
     let mut sample_buf = vec![0f32; 960 * 2];
     let mut encoded_buf = vec![0u8; 4000];
 

@@ -2,10 +2,10 @@
 use anyhow::{Result, Context, bail};
 use tokio::task;
 use tokio::io::AsyncWriteExt;
+use crate::audio::Mic;
 
 
-pub async fn run() -> Result<()> {
-    let (_speaker, mut mic) = crate::audio::init()?;
+pub async fn run(mut mic: Mic) -> Result<()> {
     let encoder = encoder_from_format(mic.format())?;
     let mut frame = vec![0f32; 960 * mic.format().channels as usize];
     let mut out_buf = vec![0u8; 4000];
