@@ -26,7 +26,6 @@ pub async fn run() -> Result<()> {
         file.write_all(&n.to_ne_bytes()).await?;
         file.write_all(&out_buf[..n]).await?;
     }
-    Ok(())
 }
 
 fn encoder_from_format(format: &cpal::Format) -> Result<audiopus::coder::Encoder> {

@@ -26,8 +26,6 @@ pub async fn run(mut speaker: Speaker) -> Result<()> {
             speaker.send(*sample).await?;
         }
     }
-
-    Ok(())
 }
 
 fn decoder_from_format(format: &cpal::Format) -> Result<audiopus::coder::Decoder> {
