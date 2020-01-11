@@ -14,7 +14,7 @@ pub async fn run() -> Result<()> {
 
     mic.play();
 
-    'outer: loop {
+    loop {
         for slot in frame.iter_mut() {
             *slot = mic.recv().await?;
         }
@@ -26,7 +26,6 @@ pub async fn run() -> Result<()> {
         file.write_all(&n.to_ne_bytes()).await?;
         file.write_all(&out_buf[..n]).await?;
     }
-    file.flush().await?;
     Ok(())
 }
 
