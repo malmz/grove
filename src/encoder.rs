@@ -16,11 +16,7 @@ pub async fn run() -> Result<()> {
 
     'outer: loop {
         for slot in frame.iter_mut() {
-            if let Ok(val) = mic.recv().await {
-                *slot = val;
-            } else {
-                break 'outer;
-            }
+            *slot = mic.recv().await?;
         }
 
         let n = task::block_in_place(|| {
