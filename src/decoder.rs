@@ -13,19 +13,24 @@ pub async fn run(mut speaker: Speaker) -> Result<()> {
 
     let mut file = tokio::fs::File::open("encoded.opus").await?;
 
-    speaker.play();
-
+    speaker.play()?;
+    let chans = speaker.format().channels as usize;
     loop {
         let n = file.read_u64().await? as usize;
-        file.read_exact(&mut encoded_buf[..n]).await?;
+        match file.read_exact(&mut encoded_buf[..n]).await {
+            Ok(_) => {},
+            Err(e) if e.kind() == tokio::io::ErrorKind::UnexpectedEof => break,
+            Err(e) => bail!(e),
+        }
         let n = task::block_in_place(|| {
             decoder.decode_float(Some(&encoded_buf[..n]), &mut sample_buf, false)
         })?;
 
-        for sample in &sample_buf[..n] {
+        for sample in &sample_buf[..n * chans] {
             speaker.send(*sample).await?;
         }
     }
+    Ok(())
 }
 
 fn decoder_from_format(format: &cpal::Format) -> Result<audiopus::coder::Decoder> {

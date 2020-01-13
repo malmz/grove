@@ -12,7 +12,7 @@ pub async fn run(mut mic: Mic) -> Result<()> {
 
     let mut file = tokio::fs::File::create("encoded.opus").await?;
 
-    mic.play();
+    mic.play()?;
 
     loop {
         for slot in frame.iter_mut() {
@@ -23,7 +23,7 @@ pub async fn run(mut mic: Mic) -> Result<()> {
             encoder.encode_float(&frame, &mut out_buf).context("Failed to encode")
         })?;
 
-        file.write_all(&n.to_ne_bytes()).await?;
+        file.write_u64(n as u64).await?;
         file.write_all(&out_buf[..n]).await?;
     }
 }

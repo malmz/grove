@@ -315,37 +315,6 @@ impl<T> Producer<T> {
         self.tail = new_tail;
     } 
 
-    pub fn poll_send(&mut self, cx: &mut Context<'_>, value: T) -> Poll<Result<(), PushError<T>>> {
-
-        // Check if the queue is *possibly* full.
-        if self.inner.distance(self.head, self.tail) == self.inner.cap {
-            // We need to refresh the head and check again if the queue is *really* full.
-            let new_head = self.inner.head.load(Ordering::Acquire);
-            self.head = new_head;
-
-            // Is the queue *really* full?
-            if self.inner.distance(self.head, self.tail) == self.inner.cap {
-                if self.inner.disconnected.load(Ordering::Relaxed) {
-                    return Poll::Ready(Err(PushError::disconnected(value)));
-                }
-                *self.inner.push_waker.lock().unwrap() = Some(cx.waker().clone());
-                return Poll::Pending;
-            }
-        }
-
-        // Write the value into the tail slot.
-        unsafe {
-            self.inner.slot(self.tail).write(value);
-        }
-
-        // Move the tail one slot forward.
-        let new_tail = self.inner.increment(self.tail);
-        self.inner.tail.store(new_tail, Ordering::Release);
-        self.tail = new_tail;
-
-        Poll::Ready(Ok(()))
-    }
-
     /// Returns the capacity of the queue.
     ///
     /// # Examples

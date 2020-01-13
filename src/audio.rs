@@ -31,12 +31,12 @@ impl Speaker {
         self.buf.send(sample).await
     }
 
-    pub fn play(&self) {
-        self.engine.event_loop.play_stream(self.id.clone());
+    pub fn play(&self) -> Result<(), cpal::PlayStreamError> {
+        self.engine.event_loop.play_stream(self.id.clone())
     }
 
-    pub fn pause(&self) {
-        self.engine.event_loop.pause_stream(self.id.clone());
+    pub fn pause(&self) -> Result<(), cpal::PauseStreamError> {
+        self.engine.event_loop.pause_stream(self.id.clone())
     }
 
     pub fn format(&self) -> &cpal::Format {
@@ -57,12 +57,12 @@ impl Mic {
         self.buf.recv().await
     }
 
-    pub fn play(&self) {
-        self.engine.event_loop.play_stream(self.id.clone());
+    pub fn play(&self) -> Result<(), cpal::PlayStreamError> {
+        self.engine.event_loop.play_stream(self.id.clone())
     }
 
-    pub fn pause(&self) {
-        self.engine.event_loop.pause_stream(self.id.clone());
+    pub fn pause(&self) -> Result<(), cpal::PauseStreamError> {
+        self.engine.event_loop.pause_stream(self.id.clone())
     }
 
     pub fn format(&self) -> &cpal::Format {
@@ -128,7 +128,7 @@ pub fn init() -> Result<(Speaker, Mic)> {
     ))
 }
 
-fn audio_callback(id: cpal::StreamId, data: cpal::StreamData, bufs: &mut Bufs) {
+fn audio_callback(_id: cpal::StreamId, data: cpal::StreamData, bufs: &mut Bufs) {
     use cpal::StreamData;
     use cpal::{UnknownTypeOutputBuffer, UnknownTypeInputBuffer};
     use cpal::Sample;
@@ -178,7 +178,6 @@ fn audio_callback(id: cpal::StreamId, data: cpal::StreamData, bufs: &mut Bufs) {
             }
             bufs.mbuf.notify();
         },
-        _ => (),
     }
 }
 
