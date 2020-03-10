@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use futures::future::poll_fn;
 
-use crossbeam::utils::CachePadded;
+use crossbeam_utils::CachePadded;
 
 use std::task::Waker;
 use std::task::Context;

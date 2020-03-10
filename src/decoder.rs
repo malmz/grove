@@ -1,10 +1,47 @@
 
 use anyhow::{Result, Context, bail};
 use crate::audio::Speaker;
+use byteorder::NetworkEndian;
+use byteorder::ByteOrder;
 
 use tokio::prelude::*;
 use tokio::task;
+use tokio::net::udp;
 
+pub async fn run_network(mut speaker: Speaker, mut socket: udp::RecvHalf) -> Result<()> {
+    let mut decoder = decoder_from_format(speaker.format())?;
+    let chans = speaker.format().channels as usize;
+    let mut sample_buf = vec![0f32; 2880 * chans];
+    let mut encoded_buf = vec![0u8; 4000 + 2];
+    
+    speaker.play()?;
+
+    let mut last_seq = 0;
+
+    loop {
+        let n = socket.recv(&mut encoded_buf).await?;
+        let msg = &encoded_buf[..n];
+
+        let seq = NetworkEndian::read_u16(&msg[0..2]);
+
+        if seq > last_seq {
+            let diff = seq - last_seq;
+            let mut msg = Some(&msg[2..]);
+            for _ in 0..diff {
+                let n = task::block_in_place(|| {
+                    decoder.decode_float(msg.take(), &mut sample_buf, false)
+                })?;
+
+                for sample in &sample_buf[..n * chans] {
+                    speaker.send(*sample).await?;
+                }        
+            }
+            last_seq = seq;
+        }
+    }
+}
+
+#[allow(dead_code)]
 pub async fn run(mut speaker: Speaker) -> Result<()> {
 
     let mut decoder = decoder_from_format(speaker.format())?;

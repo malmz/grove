@@ -3,7 +3,35 @@ use anyhow::{Result, Context, bail};
 use tokio::task;
 use tokio::io::AsyncWriteExt;
 use crate::audio::Mic;
+use tokio::net::udp;
+use byteorder::{NetworkEndian, ByteOrder};
 
+const LATENCY: usize = 960;
+//const LATENCY: usize = 120;
+
+pub async fn run_network(mut mic: Mic, mut socket: udp::SendHalf) -> Result<()> {
+    let encoder = encoder_from_format(mic.format())?;
+    let mut frame = vec![0f32; LATENCY * mic.format().channels as usize];
+    let mut out_buf = vec![0u8; 4000 + 2];
+    
+    mic.play()?;
+
+    let mut seq = 0;
+
+    loop {
+        seq += 1;
+        for slot in frame.iter_mut() {
+            *slot = mic.recv().await?;
+        }
+
+        let n = task::block_in_place(|| {
+            encoder.encode_float(&frame, &mut out_buf[2..]).context("Failed to encode")
+        })?;
+
+        NetworkEndian::write_u16(&mut out_buf[..2], seq);
+        socket.send(&out_buf[..n]).await?;
+    }
+}
 
 pub async fn run(mut mic: Mic) -> Result<()> {
     let encoder = encoder_from_format(mic.format())?;
